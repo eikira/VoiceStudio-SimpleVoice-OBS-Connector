@@ -1,6 +1,8 @@
 (function () {
   'use strict';
   var S = window.VSShared;
+  // Firefox or Chrome: a few help texts differ (see .ffOnly / .crOnly in ui.css).
+  if (location.protocol === 'moz-extension:') document.documentElement.classList.add('ff');
   var $ = function (id) { return document.getElementById(id); };
   var overlayId = '';
   var voices = []; // [{ id, name }] loaded from the chosen engine (VoiceStudio or SimpleVoice OBS)
@@ -112,7 +114,7 @@
   }
 
   // ---- permissions for hosts other than this PC -------------------------------------------
-  // Must be the first async call in a click handler so Chrome treats it as user-initiated.
+  // Must be the first async call in a click handler so the browser treats it as user-initiated.
   function ensurePermissions(urls) {
     var patterns = [];
     urls.forEach(function (u) {
@@ -161,6 +163,14 @@
       blankLabel: '- choose a voice -', source: function () { return voices; }
     });
     var speed = speedSelect(m.speed, 'default');
+    // Who may use it: everyone, or only subscribers (and the admin). The second choice needs the Rumble key.
+    var who = document.createElement('select');
+    who.className = 'who';
+    [['everyone', 'Everyone'], ['subs', 'Only subscribers (+ admin)']].forEach(function (o) {
+      var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; who.appendChild(op);
+    });
+    who.value = m.access === 'subs' ? 'subs' : 'everyone';
+    who.addEventListener('change', function () { syncWho(); });
     row._voice = voice;
     row._model = m.model || ''; // a model typed for this command in an older version is kept as it was (it is not edited here any more)
 
@@ -175,10 +185,28 @@
     del.addEventListener('click', function () { row.remove(); });
     test.addEventListener('click', function () { testRow(row, st); });
 
-    row.append(cmdWrap, voice.el, speed, actions, st);
+    row.append(cmdWrap, voice.el, speed, who, actions, st);
     $('mappings').appendChild(row);
     checkLength();
     return row;
+  }
+
+  // "Only subscribers" needs the Rumble key: without one the choice is grayed out (a row already set to it
+  // stays set, and is simply not used until a key is saved).
+  function syncWho() {
+    var hasKey = !!S.cleanRumbleKey($('rumbleKey').value);
+    document.querySelectorAll('#mappings .row').forEach(function (r) {
+      var sel = r.querySelector('select.who');
+      var opt = sel.querySelector('option[value=subs]');
+      opt.disabled = !hasKey && sel.value !== 'subs';
+      sel.title = hasKey ? '' : 'Needs a Rumble Live Stream API key (below, under the list).';
+      var st = r.querySelector('.rowStatus');
+      if (sel.value === 'subs' && !hasKey) {
+        st.className = 'rowStatus bad'; st.textContent = 'Only subscribers: needs the Rumble key (below). Until then this voice is not read.';
+      } else if (sel.value === 'subs') {
+        if (st.className.indexOf('bad') !== -1) { st.className = 'rowStatus muted'; st.textContent = ''; }
+      } else if (/Rumble key/.test(st.textContent)) { st.className = 'rowStatus muted'; st.textContent = ''; }
+    });
   }
 
   function readRow(row) {
@@ -187,7 +215,8 @@
       voice: row._voice.get(),
       voiceName: row._voice.getName(),
       speed: row.querySelector('.speed').value.trim(),
-      model: row._model
+      model: row._model,
+      access: row.querySelector('select.who').value === 'subs' ? 'subs' : 'everyone'
     };
   }
 
@@ -322,7 +351,8 @@
       removeCommand: $('removeCommand').checked,
       maxChars: Math.max(10, Math.min(2000, parseInt($('maxChars').value, 10) || S.DEFAULTS.maxChars)),
       cooldownSec: Math.max(0, Math.min(3600, parseInt($('cooldown').value, 10) || 0)),
-      updateCheck: $('updateCheck').checked
+      updateCheck: $('updateCheck').checked,
+      rumbleKey: S.cleanRumbleKey($('rumbleKey').value)
     }, collectReadAll());
     cfg.profiles = {};
     S.ENGINES.forEach(function (e) { cfg.profiles[e] = e === cfg.engine ? S.profileOf(cfg) : profiles[e] || S.defaultProfile(); });
@@ -331,7 +361,7 @@
 
   function validate(cfg) {
     if (!S.isValidHttpUrl(cfg.relayUrl)) return 'The relay address must start with http:// or https://';
-    if (!S.isValidHttpUrl(cfg.voiceStudioUrl)) return 'The VoiceStudio address must start with http:// or https://';
+    if ($('rumbleKey').value.trim() && !cfg.rumbleKey) return 'The Rumble key does not look right. Paste the key, or the whole API address with ?key=...';
     var seen = {};
     for (var i = 0; i < cfg.mappings.length; i++) {
       var m = cfg.mappings[i];
@@ -372,7 +402,10 @@
       } else {
         setStatus(el, (curEngine() === 'simplevoice' ? 'SimpleVoice OBS version ' : 'Relay version ') + d.version + '.', 'muted');
       }
-    }).catch(function () { setStatus($('relayVersion'), '', 'muted'); });
+      setStatus($('relayVsAddress'), d && typeof d.voicestudio === 'string' ? 'This relay looks for VoiceStudio at: ' + d.voicestudio : '', 'muted');
+      var lt = S.listeningText(d);
+      setStatus($('relayListening'), lt ? 'The relay listens on: ' + lt + '. Change it in the relay (tray menu "Listening address (network)..." on Windows).' : '', 'muted');
+    }).catch(function () { setStatus($('relayVersion'), '', 'muted'); setStatus($('relayListening'), '', 'muted'); setStatus($('relayVsAddress'), '', 'muted'); });
   }
 
   function openRelayFolder() {
@@ -416,7 +449,7 @@
   function vsBase() {
     return curEngine() === 'simplevoice'
       ? (S.trimUrl($('relayUrl').value) || S.DEFAULTS.relayUrl)
-      : (S.trimUrl($('vsUrl').value) || S.DEFAULTS.voiceStudioUrl);
+      : (S.trimUrl($('relayUrl').value) || S.DEFAULTS.relayUrl) + '/vs';
   }
 
   function listFrom(data, keys) {
@@ -580,10 +613,10 @@
     var cfg = collect();
     var problem = validate(cfg);
     if (problem) { setStatus($('saveStatus'), problem, 'bad'); return Promise.resolve(false); }
-    var patterns = [cfg.voiceStudioUrl, cfg.relayUrl];
+    var patterns = [cfg.relayUrl];
     return ensurePermissions(patterns).then(function (granted) {
       if (!granted) {
-        setStatus($('saveStatus'), 'Saved, but Chrome did not allow access to the non-local address. It will not work until you allow it.', 'bad');
+        setStatus($('saveStatus'), 'Saved, but the browser did not allow access to the non-local address. It will not work until you allow it.', 'bad');
       }
       return chrome.storage.local.set({ config: cfg }).then(function () {
         if (granted) setStatus($('saveStatus'), 'Saved.', 'good');
@@ -606,6 +639,7 @@
     document.querySelectorAll('#mappings .row').forEach(function (r) { r.remove(); });
     (cfg.mappings.length ? cfg.mappings : [{ command: '', voice: '' }]).forEach(addRow);
     fillReadAll(cfg);
+    syncWho();
   }
 
   // ---- fill the page from a config (used at startup and by "Import") ---------------------
@@ -622,6 +656,7 @@
     $('maxChars').value = cfg.maxChars;
     $('cooldown').value = cfg.cooldownSec;
     $('updateCheck').checked = cfg.updateCheck !== false;
+    $('rumbleKey').value = cfg.rumbleKey || '';
     fillProfile(cfg);
     applyEngine(false);
     refreshObsUrl();
@@ -645,7 +680,7 @@
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
-      setStatus($('backupStatus'), 'Exported ' + (doc.settings.profiles.voicestudio.mappings.length + doc.settings.profiles.simplevoice.mappings.length) + ' command(s) (both programs). Chrome saved the file in your Downloads folder (or asked where). Keep it private: it contains your OBS ID.', 'good');
+      setStatus($('backupStatus'), 'Exported ' + (doc.settings.profiles.voicestudio.mappings.length + doc.settings.profiles.simplevoice.mappings.length) + ' command(s) (both programs). The browser saved the file in your Downloads folder (or asked where). Keep it private: it contains your OBS ID.', 'good');
     }).catch(function (e) {
       setStatus($('backupStatus'), 'Could not export: ' + e.message, 'bad');
     });
@@ -655,7 +690,7 @@
     if (!file) return;
     if (file.size > S.MAX_IMPORT_BYTES) { setStatus($('backupStatus'), 'The file is too big to be a settings file.', 'bad'); return; }
     file.text().then(function (text) {
-      var r = S.parseImport(text, overlayId);
+      var r = S.parseImport(text, overlayId, S.cleanRumbleKey($('rumbleKey').value));
       if (!r.ok) { setStatus($('backupStatus'), r.error, 'bad'); return; }
       fillForm(r.config);
       var n = r.config.profiles.voicestudio.mappings.length + r.config.profiles.simplevoice.mappings.length;
@@ -670,6 +705,93 @@
       setStatus($('backupStatus'), 'The file could not be read.', 'bad');
     });
   }
+
+  // ---- find the relay in the network ------------------------------------------------------
+  var scanCancelled = false, scanRunning = false;
+
+  function relayPort() {
+    try { var u = new URL(S.trimUrl($('relayUrl').value) || S.DEFAULTS.relayUrl); return u.port || (u.protocol === 'https:' ? '443' : '80'); } catch (e) { return '8787'; }
+  }
+
+  function showPortWarn() {
+    $('detectPortWarn').textContent = 'Detect looks only on port ' + relayPort() + ' (the port in the Relay address above). If the relay uses another port, set the same port in the Relay address first, or Detect will not find it.';
+  }
+
+  function useFound(e) {
+    $('relayUrl').value = 'http://' + e.host + ':' + e.port;
+    if (/simplevoice/i.test(e.name)) $('engine').value = 'simplevoice';
+    else if (/voicestudio/i.test(e.name)) $('engine').value = 'voicestudio';
+    applyEngine(true);
+    refreshObsUrl();
+    showEngineAddress();
+    setStatus($('saveStatus'), 'Relay address set to http://' + e.host + ':' + e.port + '. Not saved yet: click Save. The OBS URL above changed too: copy it into OBS.', 'muted');
+    window.scrollTo(0, 0);
+  }
+
+  function startScan() {
+    if (scanRunning) return;
+    var mode = (document.querySelector('input[name=scanMode]:checked') || {}).value || 'quick';
+    var net = $('scanNet').value;
+    if (mode === 'net' && !S.parseNet(net)) {
+      setStatus($('scanStatus'), 'Type the first three numbers of your network, for example 10.10.10. Only private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x) are searched.', 'bad');
+      return;
+    }
+    var port = relayPort();
+    var first = '';
+    try { first = new URL(S.trimUrl($('relayUrl').value)).hostname; } catch (e) { first = ''; }
+    var hosts = S.scanHosts(mode, { net: net, first: first });
+    scanRunning = true; scanCancelled = false;
+    $('scanStart').disabled = true; $('scanCancel').hidden = false;
+    $('scanResults').textContent = '';
+    var t0 = Date.now();
+    var wide = mode === 'wide';
+    S.scanForRelays(function (u, o) { return fetch(u, o); }, hosts, port, {
+      concurrency: wide ? 128 : 48, timeoutMs: wide ? 700 : 900,
+      isCancelled: function () { return scanCancelled; },
+      onProgress: function (d, t) {
+        if (d % 10 === 0 || d === t) setStatus($('scanStatus'), 'Searching on port ' + port + '... ' + d + ' of ' + t + ' addresses (' + Math.round(d * 100 / t) + '%).', 'muted');
+      },
+      onFound: function (e) {
+        var line = document.createElement('div');
+        line.className = 'found';
+        var txt = document.createElement('span');
+        txt.textContent = e.name + ' ' + e.version + ' at http://' + e.host + ':' + e.port + (S.listeningText(e) ? ' (listens on ' + S.listeningText(e) + ')' : '');
+        var b = document.createElement('button');
+        b.className = 'small'; b.textContent = 'Use this';
+        b.addEventListener('click', function () { useFound(e); });
+        line.append(txt, b);
+        $('scanResults').appendChild(line);
+      }
+    }).then(function (r) {
+      scanRunning = false;
+      $('scanStart').disabled = false; $('scanCancel').hidden = true;
+      var secs = Math.round((Date.now() - t0) / 1000);
+      if (r.cancelled) setStatus($('scanStatus'), 'Cancelled after ' + r.done + ' of ' + r.total + ' addresses. Found: ' + r.found.length + '.', 'muted');
+      else if (r.found.length) setStatus($('scanStatus'), 'Done in ' + secs + ' seconds. Found ' + r.found.length + ' relay' + (r.found.length > 1 ? 's' : '') + ' on port ' + port + ':', 'good');
+      else setStatus($('scanStatus'), 'Done in ' + secs + ' seconds (' + r.total + ' addresses on port ' + port + '). No relay found. Check: the relay is running, it listens on a network address (not "this PC only"), the port matches' + (mode === 'quick' ? ', and try "My own network" or "Search wider".' : '.'), 'bad');
+    });
+  }
+
+  $('scanStart').addEventListener('click', startScan);
+  $('scanCancel').addEventListener('click', function () { scanCancelled = true; setStatus($('scanStatus'), 'Cancelling...', 'muted'); });
+  $('relayUrl').addEventListener('input', showPortWarn);
+  showPortWarn();
+
+  // ---- Rumble key -------------------------------------------------------------------------
+  $('rumbleKey').addEventListener('input', syncWho);
+  $('testKey').addEventListener('click', function () {
+    var key = S.cleanRumbleKey($('rumbleKey').value);
+    if (!key) { setStatus($('keyStatus'), $('rumbleKey').value.trim() ? 'The key does not look right. Paste the key, or the whole API address with ?key=...' : 'Paste your Rumble key first.', 'bad'); return; }
+    setStatus($('keyStatus'), 'Saving and asking Rumble...', 'muted');
+    save().then(function (saved) {
+      if (!saved) { setStatus($('keyStatus'), 'Not saved: see the message at the bottom.', 'bad'); return; }
+      chrome.runtime.sendMessage({ type: 'rumblecheck' }, function (r) {
+        void chrome.runtime.lastError;
+        if (r && r.ok) setStatus($('keyStatus'), 'The key works. Rumble lists ' + r.listed + ' subscriber(s)' + (r.total > r.listed ? ' of ' + r.total : '') + '. The admin account is ' + (r.admin ? '"' + r.admin + '"' : 'not given') + '.', 'good');
+        else setStatus($('keyStatus'), 'Saved, but the key did not work: ' + ((r && r.error) || 'no answer') + '. Voices set to subscribers are not read until it works.', 'bad');
+      });
+    });
+  });
 
   // ---- startup ----------------------------------------------------------------------------
   function load() {
@@ -727,16 +849,16 @@
       var c = S.chooseEngine(found, cfg.engine);
       if (c.change) { $('engine').value = c.engine; applyEngine(true); }
       var name = S.ENGINE_NAMES[c.engine];
-      var addr = { simplevoice: S.trimUrl(cfg.relayUrl), voicestudio: S.trimUrl(cfg.voiceStudioUrl) };
+      var addr = { simplevoice: S.trimUrl(cfg.relayUrl), voicestudio: S.trimUrl(cfg.relayUrl) + '/vs' };
       if (c.note === 'both') setStatus(el, 'Both answer: SimpleVoice OBS at ' + addr.simplevoice + ' and VoiceStudio at ' + addr.voicestudio + '. Your choice stays: ' + name + '. Change it above if you want the other one.', 'muted');
-      else if (c.note === 'none') setStatus(el, 'Neither was found. SimpleVoice OBS at ' + S.trimUrl(cfg.relayUrl) + ': ' + found.why.simplevoice + '. VoiceStudio at ' + S.trimUrl(cfg.voiceStudioUrl) + ': ' + found.why.voicestudio + '. Start one of them (VoiceStudio can need a minute after it starts) and click Detect again, or check the addresses. Your choice stays: ' + name + '.', 'bad');
+      else if (c.note === 'none') setStatus(el, 'Neither was found. SimpleVoice OBS at ' + S.trimUrl(cfg.relayUrl) + ': ' + found.why.simplevoice + '. VoiceStudio (through the relay, ' + S.trimUrl(cfg.relayUrl) + '/vs): ' + found.why.voicestudio + '. Start one of them (VoiceStudio can need a minute after it starts) and click Detect again, or check the addresses. Your choice stays: ' + name + '.', 'bad');
       else setStatus(el, name + ' found at ' + addr[c.engine] + (c.change ? ' and selected. Click Save to keep it.' : '. It is already selected.'), 'good');
       return c;
     });
   }
   $('engine').addEventListener('change', function () { applyEngine(true); setStatus($('engineStatus'), 'Not saved yet. Click Save.', 'muted'); });
   $('detectEngine').addEventListener('click', function () {
-    ensurePermissions([$('vsUrl').value, $('relayUrl').value]).then(function () { return detectEngine(false); });
+    ensurePermissions([$('relayUrl').value]).then(function () { return detectEngine(false); });
   });
   $('checkRelay').addEventListener('click', checkRelay);
   $('openRelayFolder').addEventListener('click', openRelayFolder);
@@ -769,6 +891,7 @@
     });
   });
   $('extId').textContent = chrome.runtime.id;
+  $('extIdFf').textContent = chrome.runtime.id;
   chrome.storage.onChanged.addListener(function (ch, area) { if (area === 'local' && ch.update) showUpdateStatus(); });
   chrome.runtime.sendMessage({ type: 'updatecheck' }, function () { void chrome.runtime.lastError; showUpdateStatus(); });
   showUpdateStatus();

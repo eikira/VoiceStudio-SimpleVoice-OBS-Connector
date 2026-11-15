@@ -2,6 +2,18 @@
 
 Short overview of what changed. Versions before 0.0.5 were private test versions.
 
+## 0.3.0
+
+Needs VoiceStudio relay 0.1.1 or newer (for VoiceStudio) or SimpleVoice OBS 1.0.0 or newer. The newest relay and Setup versions (relay 0.1.1, SimpleVoice OBS 1.0.3) add the listening address and are needed for the new display and Detect names.
+
+- **Voices for subscribers only (Rumble):** every voice in Settings -> 3 has "Who may use it": Everyone, or Only subscribers (+ admin). It uses the Rumble Live Stream API with your own key (paste it under the list, "Save and test key"). Without a key the choice is grayed out; a voice already set to subscribers stays set and is simply not read until a key is saved. The name shown in the chat is never trusted: each command is matched to a message in Rumble's own list (same text, written just now), the real account behind it is taken from the API and compared with the subscribers list and the channel's own account (the admin). No match, or two accounts with the same text at the same moment: refused. On other platforms (Twitch, YouTube, Kick) a subscribers-only voice is not read, because there is no check there yet. The key stays in this browser: it is not exported, not sent to the relay, only to rumble.com.
+- **Detect relay** (Settings -> 1): finds a relay running on another computer. Quick: this PC and the usual home networks (192.168.0/1/2/10/50/100/178, 10.0.0/1/2, 10.10.10, 10.1.1, 172.16.0/1). Own network: type the first three numbers. Wider: every network of 192.168.x.x, then 10.0.x.x and 172.16.x.x, with progress and a Cancel button. Only private ranges are searched. The port is the one in the Relay address, so it must match the relay's port; two red notices say this. A found relay has a "Use this" button.
+- **Shows where the relay listens** (this PC only, or the network address with the adapter name) when the relay is 0.0.9 / SimpleVoice OBS 1.0.2 or newer (relay 0.1.1 / SimpleVoice OBS 1.0.3 recommended).
+- **Separate packages for Chrome and Firefox** (`package.sh`): the Chrome zip has `background.service_worker` only, the Firefox zip has `background.scripts` only, which removes the Chrome warning about unsupported keys. Firefox add-on ID unchanged. The Firefox changes of the earlier port (help texts, popup hint when site access is off) are now part of the main source.
+- **Clearer "NOT WORKING" messages:** they now name the address that was tried and both programs. If SimpleVoice OBS is selected but the program at the relay address is the standalone VoiceStudio relay, the message says exactly that and to choose VoiceStudio in Settings -> 2.
+- Export files carry the new "who may use it" setting; the Rumble key is never in an export, and an import keeps the key of the browser it is loaded in.
+- **Not verified:** the Rumble check against the real Rumble API and a real chat (tested with answers made up in the same shape; the real answer format is the one seen earlier in this project); Detect on a real home network with other computers (tested against a relay on this PC and with fake answers); Firefox (not run here); Twitch, YouTube and Kick behave as before.
+
 ## 0.2.0
 
 The extension now works with **VoiceStudio or SimpleVoice OBS**. Renamed from "VoiceStudio OBS Connector" to **VoiceStudio+SimpleVoice OBS Connector**.

@@ -59,6 +59,22 @@
     });
   }
 
+  // Firefox lets the user switch off site access per extension; the chat readers then never run.
+  function sitesAllowed() {
+    var origins = [];
+    (chrome.runtime.getManifest().content_scripts || []).forEach(function (cs) {
+      cs.matches.forEach(function (m) {
+        var host = (m.match(/^(https:\/\/[^/]+)\//) || [])[1];
+        if (host && origins.indexOf(host + '/*') === -1) origins.push(host + '/*');
+      });
+    });
+    try {
+      return chrome.permissions.contains({ origins: origins }).then(function (ok) { return !!ok; }, function () { return true; });
+    } catch (e) {
+      return Promise.resolve(true);
+    }
+  }
+
   // Which chat pages the extension is listening to right now.
   function refreshChat() {
     chrome.storage.session.get('chatTabs').then(function (res) {
@@ -70,6 +86,9 @@
       if (!tabs.length) {
         paint($('chat'), 'not detected', 'bad');
         $('chatHint').textContent = 'Open your chat page. If it is already open and still not detected, refresh it (F5).';
+        sitesAllowed().then(function (ok) {
+          if (!ok) $('chatHint').textContent = 'The browser has not allowed this extension on all chat sites. Open the add-ons page (about:addons), click this extension, then Permissions, and switch the chat sites on. Then refresh your chat page (F5).';
+        });
         return;
       }
       var allListening = tabs.every(function (t) { return t.listening; });

@@ -25,6 +25,14 @@ it is the relay and the voice engine in one program). The user picks the engine 
 | Standalone relay for VoiceStudio | VoiceStudio OBS Connector Relay (repo `eikira/VoiceStudio-OBS-Connector-Relay`, name kept) |
 | SimpleVoice side | SimpleVoice OBS (product), SimpleVoice OBS Relay (its background program) |
 
+## 0.3.0: subscribers-only voices, Detect relay, two packages, VoiceStudio through the relay
+
+- VoiceStudio is reached through the relay (relay 0.1.1+): `speechBase(cfg)` = relay address + `/vs` for VoiceStudio. The relay forwards `/vs/health`, `/vs/v1/audio/voices`, `/vs/v1/models` and `POST /vs/v1/audio/speech?id=`; its `/info` has `voicestudio` (the address it uses), which the gate needs for the VoiceStudio engine. `config.voiceStudioUrl` is kept only for old files and is not used.
+
+- `mapping.access` is `everyone` or `subs`. `background.js` `mayUse()` runs before the relay check and the cooldown: `subs` is refused unless the platform is `rumble` and `rumbleGroupOf()` (API match of the message, then `rumbleGroup()`: admin = API top-level `username`, subscriber = `subscribers.recent_subscribers`) returns a group. The shown display name is never used. `config.rumbleKey` is flat, shared by both programs, never exported (`buildExport` deletes it; `parseImport(text, keepId, keepKey)` keeps the browser's own).
+- Detect: `scanHosts` / `scanForRelays` in `lib/shared.js` (private ranges only, port from the Relay address, cancel, progress). A relay is recognised by `/info` (`ok`, `version`, `protocol >= 2`); `name`, `listening`, `adapter` are shown when present.
+- Packages: `package.sh` builds `-Chrome.zip` (`manifests/chrome.json`, service_worker only, folder `VoiceStudio-SimpleVoice-OBS-Connector` inside) and `-Firefox.zip` (`manifests/firefox.json`, scripts only, files at the top: upload to addons.mozilla.org). `extension/manifest.json` must equal `manifests/chrome.json`.
+
 ## The speech engine choice (0.2.0)
 
 - `config.engine`: `'voicestudio'` (default; also what every older saved config means) or `'simplevoice'`. In `lib/shared.js`: `speechBase(cfg)` (VoiceStudio address, or the relay address for SimpleVoice OBS),
@@ -37,7 +45,7 @@ it is the relay and the voice engine in one program). The user picks the engine 
 - The relay gate (`relayReady`) works for both (`GET /info`, protocol >= 2; SimpleVoice OBS 1.0.0 reports protocol 2). The gate stores `engine`, so messages and download links name the right program. SimpleVoice OBS `/info` has no update information (`updateAvailable` false), so no relay update notice appears for it.
 - SimpleVoice OBS lists different voices depending on its running engine (own voices on the graphics card engine, built-in voices on the processor engine). The extension does not poll for that; Settings tells the user to click Load voices again.
 - Settings backup: the file `app` is now `VoiceStudio+SimpleVoice OBS Connector`; files with the old name `VoiceStudio OBS Connector` still import (`EXPORT_APP_OLD`). `EXPORT_FORMAT` stays 1 (the new key is optional).
-- The version in the manifest is numeric (`0.2.0`). A beta may add `version_name` (for example `0.2.0 beta 1`); Settings and the popup show it when present. The released 0.2.0 has none.
+- The version in the manifest is numeric (`0.2.0`). A test build may add `version_name` (for example `0.3.0 beta 1`); Settings and the popup show it when present. Released versions have none.
 - **Untested here (no Chrome with real programs in the sandbox):** the whole thing in real Chrome with real VoiceStudio and SimpleVoice OBS. Unit tests and a jsdom smoke test of the settings page were run.
 
 ## How the pieces fit

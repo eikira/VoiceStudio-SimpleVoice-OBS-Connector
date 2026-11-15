@@ -1,5 +1,9 @@
-/* Service worker: matches chat messages against your commands and forwards them to the relay. */
-importScripts('lib/shared.js');
+/*
+ * Background script: matches chat messages against your commands and forwards them to the relay.
+ * Chrome runs it as a service worker and loads lib/shared.js here. Firefox runs it as an event page
+ * and loads lib/shared.js first through the manifest (background.scripts).
+ */
+if (typeof importScripts === 'function') importScripts('lib/shared.js');
 const S = self.VSShared;
 
 async function getConfig() {
@@ -48,7 +52,7 @@ async function relayReady(cfg, force) {
   try {
     const res = await fetch(url + '/info', { cache: 'no-store', signal: ctrl.signal });
     const info = res.ok ? await res.json().catch(() => null) : null;
-    next = S.checkRelayInfo(info);
+    next = S.checkRelayInfo(info, engine);
   } catch (e) {
     next = { ok: false, reason: 'down', version: '', error: e.name === 'AbortError' ? 'no answer' : 'connection refused' };
   } finally {
@@ -99,6 +103,71 @@ async function postToRelay(cfg, payload) {
   }
 }
 
+// ---- Rumble: "only subscribers" voices ---------------------------------------------------------
+// A voice set to "only subscribers (and admin)" is only used on Rumble, with the user's own Rumble Live
+// Stream API key. The name shown in the chat page is never trusted (anyone can open a channel with the
+// same display name). Each such command is matched to a message in the API's own chat list (same text,
+// written just now); the API gives the real account name, which is compared with the API's subscribers and
+// the channel's own account (the admin). If the message is not found, or two accounts wrote the same text
+// at the same moment, the command is refused. Only names are kept: the answer also holds the stream key.
+const MATCH_TRIES = 4;
+const MATCH_WAIT_MS = 1500;
+let liveInflight = null;
+
+function hideKey(text, key) {
+  let t = String(text || '');
+  if (key) t = t.split(key).join('***').split(encodeURIComponent(key)).join('***');
+  return t;
+}
+
+// Asks Rumble once. Returns { data } or { error }. Two asks at the same moment share one request.
+function askRumble(cfg) {
+  if (liveInflight) return liveInflight;
+  liveInflight = (async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(S.RUMBLE_API + '?key=' + encodeURIComponent(cfg.rumbleKey), { cache: 'no-store', credentials: 'omit', signal: ctrl.signal });
+      if (!res.ok) {
+        return { error: (res.status === 401 || res.status === 403 || res.status === 404)
+          ? 'Rumble did not accept the key (answer ' + res.status + ').' : 'Rumble answered ' + res.status + '.' };
+      }
+      const data = await res.json().catch(() => null);
+      return data ? { data } : { error: 'Rumble gave no usable answer.' };
+    } catch (e) {
+      return { error: e.name === 'AbortError' ? 'Rumble did not answer in time.' : 'Cannot reach Rumble: ' + hideKey(e.message || String(e), cfg.rumbleKey) };
+    } finally {
+      clearTimeout(timer);
+    }
+  })().finally(() => { liveInflight = null; });
+  return liveInflight;
+}
+
+// Who really wrote this command? Returns 'admin', 'subscriber' or '' (not allowed / could not be checked).
+async function rumbleGroupOf(cfg, text) {
+  if (!cfg.rumbleKey) return '';
+  const seenAt = Date.now();
+  for (let i = 0; i < MATCH_TRIES; i++) {
+    const answer = await askRumble(cfg);
+    await chrome.storage.session.set({ rumbleCheck: { at: Date.now(), ok: !!answer.data, error: answer.error || '' } });
+    if (answer.data) {
+      const m = S.matchRumbleMessage(answer.data, text, Date.now() - seenAt);
+      if (m.status === 'ambiguous') return '';
+      if (m.status === 'ok') return S.rumbleGroup(S.parseRumbleAnswer(answer.data), m.user);
+    }
+    if (i < MATCH_TRIES - 1) await new Promise((r) => setTimeout(r, MATCH_WAIT_MS));
+  }
+  return '';
+}
+
+// May this command be used by this chatter? Voices for everyone: yes. Voices for subscribers: only on Rumble and
+// only when the API shows a subscriber or the admin. On other platforms there is no check yet, so they are refused.
+async function mayUse(cfg, mapping, msg) {
+  if (!S.needsSubscriber(mapping)) return true;
+  if (msg.platform !== 'rumble') return false;
+  return !!(await rumbleGroupOf(cfg, msg.text));
+}
+
 // The same message must not be sent twice (for example while an old and a new copy of the chat
 // reader briefly overlap).
 const recentChat = new Map();
@@ -120,6 +189,7 @@ async function handleChat(msg) {
   const who = S.chatterKey(msg.platform, msg.user);
 
   if (result.match) {
+    if (!(await mayUse(cfg, result.mapping, msg))) return;
     if (!(await relayReady(cfg))) return;
     if (!(await cooldownOk(who, cfg.cooldownSec))) return;
     await postToRelay(cfg, S.buildPayload(cfg, result, { user: msg.user, platform: msg.platform }));
@@ -234,6 +304,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'relaycheck') {
     getConfig().then((cfg) => relayReady(cfg, !!msg.force)).then(() => sendResponse({ ok: true, gate }), () => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg.type === 'rumblecheck') {
+    // the "Test the key" button in the settings: one ask, only a short result goes back
+    getConfig().then((cfg) => { if (!cfg.rumbleKey) return { ok: false, error: 'No Rumble key is saved.' }; return askRumble(cfg).then((a) => {
+      if (!a.data) return { ok: false, error: a.error };
+      const r = S.parseRumbleAnswer(a.data);
+      return r.ok ? { ok: true, listed: r.listed, total: r.total, admin: r.admin } : { ok: false, error: r.error };
+    }); }).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   if (msg.type === 'resetvoices') {

@@ -2,9 +2,9 @@
 
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-A Chrome extension that **reads stream chat commands aloud with your own voices**, through OBS. The speech is made either by **[VoiceStudio](https://voicestudio.sh)** or by **[SimpleVoice OBS](https://github.com/eikira/SimpleVoice-OBS)**: you choose in Settings, and **Detect** can find out which one is running.
+A Chrome and Firefox extension that **reads stream chat commands aloud with your own voices**, through OBS. The speech is made either by **[VoiceStudio](https://voicestudio.sh)** or by **[SimpleVoice OBS](https://github.com/eikira/SimpleVoice-OBS)**: you choose in Settings, and **Detect** can find out which one is running.
 
-> **Version 0.2.0** adds SimpleVoice OBS and the engine choice. Before 0.2.0 the extension was called "VoiceStudio OBS Connector". **Coming from 0.1.1?** See [Moving from 0.1.1](#moving-from-011) (one-time step).
+> **Version 0.3.0** adds voices for subscribers only (Rumble) and Detect relay. **Version 0.2.0** added SimpleVoice OBS and the engine choice. Before 0.2.0 the extension was called "VoiceStudio OBS Connector". **Coming from 0.1.1?** See [Moving from 0.1.1](#moving-from-011) (one-time step).
 
     chat:  !voice hello everyone            ->  the voice linked to !voice says "hello everyone"
     chat:  !voice2 welcome to the stream    ->  a different voice linked to !voice2 says it
@@ -19,10 +19,10 @@ command**, and without the rest of SSN.
 
 ## What you need
 
-**This extension** (Chrome), and one of these two setups:
+**This extension** (Chrome or Firefox), and one of these two setups:
 
 **A. With VoiceStudio** (Windows, macOS, Linux)
-1. **The relay, version 0.0.7 or newer**: a small background program that carries the speech to OBS.
+1. **The relay, version 0.1.1 or newer**: a small background program that carries the speech to OBS.
    **The extension refuses to work without it** (an older or missing relay gives a red notice in the popup and a red "!" on the icon; nothing is spoken).
    **[Download the VoiceStudio OBS Connector Relay](https://github.com/eikira/VoiceStudio-OBS-Connector-Relay/releases/latest)**.
 2. **[VoiceStudio](https://voicestudio.sh)** running with its OpenAI-compatible speech API (default `http://127.0.0.1:3900`).
@@ -35,12 +35,31 @@ command**, and without the rest of SSN.
 
 | | |
 |---|---|
-| **Browser** | Google Chrome (other Chromium browsers such as Edge or Brave should work but are untested) |
+| **Browser** | Google Chrome (other Chromium browsers such as Edge or Brave should work but are untested), or Firefox 128 or newer |
 | **OBS Studio** | any recent version, with a Browser Source (included in OBS) |
-| **VoiceStudio** | running locally or on another computer in your network (setup A) |
-| **Relay** | setup A: version **0.0.7 or newer**, [VoiceStudio OBS Connector Relay](https://github.com/eikira/VoiceStudio-OBS-Connector-Relay) on the computer that runs OBS |
+| **VoiceStudio** | running on the computer of the relay, or on another computer the relay can reach (setup A) |
+| **Relay** | setup A: version **0.1.1 or newer**, [VoiceStudio OBS Connector Relay](https://github.com/eikira/VoiceStudio-OBS-Connector-Relay) on the computer that runs OBS |
 | **SimpleVoice OBS** | setup B: version **1.0.0 or newer**, on the computer that runs OBS |
 | **Chat** | Twitch, YouTube, Rumble or Kick chat open in your browser (normal page or popout) |
+
+## Firefox
+
+The extension also runs in Firefox 128 or newer (desktop). Use the Firefox zip of the release (`...-Firefox.zip` once Mozilla has signed it, as an `.xpi`). The background
+script runs as an event page there, and a few help texts differ. In Firefox, site access is optional: if the extension cannot read your chat, open
+the add-on's *Permissions* (about:addons) and allow it on the chat site and on the relay address.
+
+**Temporary load (for testing):**
+
+1. Unzip the download.
+2. Type `about:debugging#/runtime/this-firefox` in the address bar.
+3. Click **Load Temporary Add-on...** and choose `manifest.json` in the unzipped folder.
+
+Firefox removes a temporary add-on when it closes, and removes its settings with it. Use
+**Settings -> 7. Backup -> Export** once your setup works, and **Import** after loading it again.
+After changing files, click **Reload** on that page (this keeps the settings).
+
+**Permanent install:** Firefox only installs add-ons permanently when Mozilla has signed them
+(addons.mozilla.org, free). The signed version installs and updates like any other Firefox add-on.
 
 ## Install
 
@@ -85,8 +104,8 @@ Settings shows the relay's version and tells you if a newer one exists, and has 
 
 1. Click the extension icon -> **Settings**.
 2. **Speech engine:** choose **VoiceStudio** or **SimpleVoice OBS**, or click **Detect** (it selects the one that is running; if both or neither answer, your choice stays).
-   - VoiceStudio: **address** default `http://127.0.0.1:3900` (this computer). For VoiceStudio on another
-     computer enter its address. VoiceStudio must be running to load models and voices.
+   - VoiceStudio: there is no VoiceStudio address in the extension; the relay knows it (default `http://127.0.0.1:3900`, see below).
+     VoiceStudio must be running to load models and voices.
      **Default model, format and speed**: "Load" asks VoiceStudio for its models.
    - SimpleVoice OBS: no address, no model, no format (it has one model and answers with WAV). Only the default speed.
      Imported voices cannot go slower than 0.8 (SimpleVoice OBS raises it for you); built-in voices go down to 0.5.
@@ -102,6 +121,18 @@ Settings shows the relay's version and tells you if a newer one exists, and has 
 
 Limits: default 190 characters per message; optional cooldown per viewer (after a command is accepted,
 more commands from that viewer are ignored for N seconds).
+
+## VoiceStudio through the relay
+
+With VoiceStudio the extension only knows the **relay's address**. The relay passes the voice list, the model list and the speech on to VoiceStudio, and the OBS page gets its audio from the relay too. Where the relay finds VoiceStudio is set on the relay (default `http://127.0.0.1:3900`, right when VoiceStudio runs on the relay's computer): tray menu *VoiceStudio address...* on Windows, or the relay's network page. Needs relay 0.1.1 or newer.
+
+## Voices for subscribers only (Rumble)
+
+In Settings -> 3 each voice has **Who may use it**: *Everyone* or *Only subscribers (+ admin)*. The second choice needs your own **Rumble Live Stream API key** (paste it under the list and click *Save and test key*); without a key it is grayed out. It works on **Rumble only** for now: on other platforms a subscribers-only voice is not read. The display name in the chat is never trusted, because anyone can use the same name. Each command is matched to Rumble's own message list and the real account behind it must be a subscriber or the channel's own account (the admin). If that cannot be checked, the command is not read. Your key stays in this browser and is never exported.
+
+## Relay on another computer: Detect
+
+If the relay (or SimpleVoice OBS) runs on another computer in your network, choose its listening address in the relay (tray menu *Listening address (network)...* on Windows), then in Settings -> 1 open **Detect relay**. It searches private networks only (192.168.x.x, 10.x.x.x, 172.16-31.x.x) on the port in the Relay address, so **the port must match**. Choose your real home or office network in the relay, not a VPN adapter.
 
 ## Read all chat (optional)
 
@@ -131,18 +162,17 @@ Because the OBS ID is in the file, your old OBS Browser Source URL keeps working
   `api.github.com` which release is the newest. That is a public page; nothing about you is sent. GitHub sees your IP address like any
   website you visit. You can switch it off in Settings -> 6. Updates.
 - Only chat messages that start with `!` are looked at further, unless you switch on "Read all chat". Settings are stored in Chrome on your computer.
-- It needs access to the supported chat sites (to read chat) and to `127.0.0.1` / `localhost`
-  (relay, SimpleVoice OBS and VoiceStudio). Another VoiceStudio address is only contacted after you allow it.
+- It needs access to the supported chat sites (to read chat) and to `127.0.0.1` / `localhost` (relay and SimpleVoice OBS). A relay on another computer is only contacted after you allow that address. Detect relay tries private network addresses only, and only when you press it. Rumble: if you use the subscribers-only feature, your Rumble key is sent to Rumble's own API only and is never in an export.
 
 ## Troubleshooting
 
-- **Red notice "NOT WORKING" in the popup:** the relay (setup A) or SimpleVoice OBS (setup B) is missing, not running, or too old. Install or update the [relay](https://github.com/eikira/VoiceStudio-OBS-Connector-Relay/releases/latest) (0.0.7+) or [SimpleVoice OBS](https://github.com/eikira/SimpleVoice-OBS/releases/latest) (1.0.0+) and start it; the notice goes away by itself.
+- **Red notice "NOT WORKING" in the popup:** the relay (setup A) or SimpleVoice OBS (setup B) is missing, not running, or too old. Install or update the [relay](https://github.com/eikira/VoiceStudio-OBS-Connector-Relay/releases/latest) (0.1.1+) or [SimpleVoice OBS](https://github.com/eikira/SimpleVoice-OBS/releases/latest) (1.0.0+) and start it; the notice goes away by itself.
 - **Voices missing or "voice does not exist" with SimpleVoice OBS:** its voice list depends on the running engine (your own voices: graphics card engine; built-in voices: processor engine). Click Load voices again.
 - **Detect says "Both answer":** both programs are running; pick the one you want in the list.
 - **Popup says Relay "not reachable":** start the relay. The address in settings must match its port (default 8787).
 - **Popup Chat line says "not detected":** open your chat page; if it is already open, refresh it (F5).
 - **Silence in OBS:** the Browser Source must show "connected" (popup: OBS page). Keep "Control audio via OBS" in mind for the mixer.
-- **"Open relay folder" does nothing:** the relay must be running and be version 0.0.6 or newer.
+- **"Open relay folder" does nothing:** the relay must be running and be version 0.1.1 or newer.
 - **A chat site changed its layout:** open an [issue](https://github.com/eikira/VoiceStudio-SimpleVoice-OBS-Connector/issues) and say which site.
 
 ## Develop

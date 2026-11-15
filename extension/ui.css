@@ -26,7 +26,7 @@ button.small { padding: 4px 9px; font-size: 12.5px; }
 .good { color: var(--good); }
 .bad { color: var(--bad); }
 .muted { color: var(--muted); }
-.mappings .head, .mappings .row { display: grid; grid-template-columns: 1.1fr 1.5fr 0.7fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.mappings .head, .mappings .row { display: grid; grid-template-columns: 1fr 1.3fr 0.7fr 1.5fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .mappings .head { color: var(--muted); font-size: 12px; font-weight: 600; }
 .mappings .actions { display: flex; gap: 4px; }
 .rowStatus { grid-column: 1 / -1; font-size: 12px; margin: -2px 0 4px; }
@@ -62,3 +62,14 @@ textarea { width: 100%; min-height: 84px; padding: 7px 9px; border: 1px solid va
 /* the speech engine choice: parts that only one of the two programs needs */
 body.sv .vsOnly { display: none !important; }
 body:not(.sv) .svOnly { display: none !important; }
+
+/* help texts that differ between Firefox and Chrome (options.js sets "ff" on <html> in Firefox) */
+html.ff .crOnly { display: none !important; }
+html:not(.ff) .ffOnly { display: none !important; }
+
+/* prominent notices and the relay search */
+.warnbox { border: 2px solid var(--bad); background: rgba(192,57,43,.12); border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-weight: 600; font-size: 13px; }
+.detect { margin-top: 10px; border: 1px solid var(--line, #3a3f48); border-radius: 8px; padding: 8px 10px; }
+.detect summary { cursor: pointer; }
+.found { display: flex; gap: 8px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.mappings select.who { width: 100%; }
