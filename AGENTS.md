@@ -25,6 +25,14 @@ it is the relay and the voice engine in one program). The user picks the engine 
 | Standalone relay for VoiceStudio | VoiceStudio OBS Connector Relay (repo `eikira/VoiceStudio-OBS-Connector-Relay`, name kept) |
 | SimpleVoice side | SimpleVoice OBS (product), SimpleVoice OBS Relay (its background program) |
 
+## 0.3.1: soundbites, simple Rumble subscriber check, popup
+
+- **Rumble subscribers:** `background.js` `mayUse()` now compares the chat name with `rumbleLists()` (API answer cached 30 s, `S.parseRumbleAnswer`, `S.rumbleGroup`). The message matching (`matchRumbleMessage`, `MATCH_*`) is gone. `refuse(why)` writes `Not read: ...` into `stats.lastError`, which the popup shows in red.
+- **Soundbites:** `refreshSoundbites()` (GET `<relay>/v1/soundbites`, at most once a minute, triggered by the chat pages' status reports and by chat messages) stores `{names, at}` in `chrome.storage.local.soundbites`. The chat pages read it (`content/common.js`, `hasEmote`) and forward a message that holds a known `:name:` even if it is not a command and read-all is off. `handleChat` sends a message that is only known emotes (`S.soundbiteOnly`) as a chat payload with the first command voice (the relay needs no voice for clips). Speech with clips is joined by the relay (SimpleVoice OBS 1.0.4+), the extension sends the text unchanged. VoiceStudio: the list is empty.
+- **Rumble emote pictures** (`content/rumble.js`): chat emotes are `<img class="chat-history--emote" src=".../iw9Cc.baa.png" alt="">`; the name is only in `data-js-emote=":bbc:"` on buttons with the same picture. `learnEmotes()` keeps picture file name -> name in `chrome.storage.local.rumbleEmotes`; `messageText()` writes a known picture back as `:name:` when that name has a clip.
+- **Popup:** `chatTabs` is keyed `tabId:frameId` (Rumble's chat can be a frame); listening frames win per tab. `S.relayGateShort()` for the short red box. Label `Relay (SV)` / `Relay (VS)`.
+- **Chrome zip:** the folder inside stays `VoiceStudio-SimpleVoice-OBS-Connector`. A zip with the files at its root was NOT added: Chrome ties the extension ID (and the saved settings) to the install path, so a second install method would reset the settings. Open for the owner to test.
+
 ## 0.3.0: subscribers-only voices, Detect relay, two packages, VoiceStudio through the relay
 
 - VoiceStudio is reached through the relay (relay 0.1.1+): `speechBase(cfg)` = relay address + `/vs` for VoiceStudio. The relay forwards `/vs/health`, `/vs/v1/audio/voices`, `/vs/v1/models` and `POST /vs/v1/audio/speech?id=`; its `/info` has `voicestudio` (the address it uses), which the gate needs for the VoiceStudio engine. `config.voiceStudioUrl` is kept only for old files and is not used.

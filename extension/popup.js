@@ -14,7 +14,7 @@
     var done = function (gate) {
       var bad = gate && gate.ok === false;
       $('gate').hidden = !bad;
-      if (bad) { $('gateText').textContent = 'NOT WORKING. ' + S.relayGateMessage(gate); $('gateLink').href = S.relayPage(gate.engine); $('gateLink').textContent = gate.engine === 'simplevoice' ? 'Download SimpleVoice OBS' : 'Download relay'; }
+      if (bad) { $('gateText').textContent = S.relayGateShort(gate); $('gateLink').href = S.relayPage(gate.engine); $('gateLink').textContent = gate.engine === 'simplevoice' ? 'Download SimpleVoice OBS' : 'Download relay'; }
     };
     if (force) {
       chrome.runtime.sendMessage({ type: 'relaycheck', force: true }, function (res) { void chrome.runtime.lastError; done(res && res.gate); });
@@ -31,8 +31,8 @@
       var n = (cfg.mappings || []).filter(function (m) { return m.command && m.voice; }).length;
       paint($('cmds'), n ? n + ' set up' : 'none yet', n ? '' : 'bad');
       var sv = S.isSimpleVoice(cfg);
-      $('relayLabel').textContent = sv ? 'SimpleVoice OBS' : 'Relay';
-      $('relayHintText').textContent = sv ? 'SimpleVoice OBS must be running (look for its tray icon or start it from the Start menu).' : 'The relay is a small program that must be running.';
+      $('relayLabel').textContent = sv ? 'Relay (SV)' : 'Relay (VS)';
+      $('relayHintText').textContent = sv ? 'Start SimpleVoice OBS.' : 'Start the relay.';
       $('relayHintLink').href = S.relayPage(cfg.engine);
       if (!cfg.overlayId) { paint($('relay'), 'open Settings first', 'bad'); return; }
 
@@ -46,11 +46,16 @@
           paint($('obs'), d.listeners > 0 ? 'connected' : 'not connected', d.listeners > 0 ? 'good' : 'muted');
         })
         .catch(function () {
-          paint($('relay'), 'not reachable', 'bad');
-          $('relayHint').hidden = false;
+          paint($('relay'), 'not running', 'bad');
+          $('relayHint').hidden = true; // the red box above already says it
           paint($('obs'), '-', 'muted');
         })
         .then(function () { clearTimeout(timer); });
+    });
+    chrome.storage.local.get(['soundbites', 'rumbleEmotes']).then(function (res) {
+      var n = ((res.soundbites && res.soundbites.names) || []).length;
+      var e = Object.keys(res.rumbleEmotes || {}).length;
+      $('sbinfo').textContent = n + ' clip' + (n === 1 ? '' : 's') + (e ? ', ' + e + ' Rumble emote' + (e === 1 ? '' : 's') + ' known' : '');
     });
     chrome.storage.session.get('stats').then(function (res) {
       var st = res.stats || {};
@@ -81,8 +86,13 @@
       var map = res.chatTabs || {};
       var now = Date.now();
       var names = { twitch: 'Twitch', youtube: 'YouTube', rumble: 'Rumble', kick: 'Kick' };
-      var tabs = Object.keys(map).map(function (k) { return map[k]; })
+      var all = Object.keys(map).map(function (k) { return map[k]; })
         .filter(function (t) { return now - t.at < 45000; });
+      // One tab can have several pages inside it (Rumble's chat is inside the stream page). A page
+      // without the chat list must not hide the one that has it: per tab, listening pages win.
+      var tabs = all.filter(function (t) {
+        return t.listening || !all.some(function (o) { return o.tab === t.tab && o.listening; });
+      });
       if (!tabs.length) {
         paint($('chat'), 'not detected', 'bad');
         $('chatHint').textContent = 'Open your chat page. If it is already open and still not detected, refresh it (F5).';

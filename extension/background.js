@@ -105,14 +105,13 @@ async function postToRelay(cfg, payload) {
 
 // ---- Rumble: "only subscribers" voices ---------------------------------------------------------
 // A voice set to "only subscribers (and admin)" is only used on Rumble, with the user's own Rumble Live
-// Stream API key. The name shown in the chat page is never trusted (anyone can open a channel with the
-// same display name). Each such command is matched to a message in the API's own chat list (same text,
-// written just now); the API gives the real account name, which is compared with the API's subscribers and
-// the channel's own account (the admin). If the message is not found, or two accounts wrote the same text
-// at the same moment, the command is refused. Only names are kept: the answer also holds the stream key.
-const MATCH_TRIES = 4;
-const MATCH_WAIT_MS = 1500;
+// Stream API key. The name shown in the chat is compared with the channel's own account name (the admin)
+// and with the subscriber list from the Rumble Live Stream API. The answer is kept for 30 seconds, so a
+// busy chat does not ask Rumble for every command. Only names are kept: the answer also holds the stream key.
+// Not checked: whether someone could use the same display name as a subscriber (never verified on Rumble).
+const RUMBLE_CACHE_MS = 30000;
 let liveInflight = null;
+let rumbleCache = { at: 0, key: '', parsed: null };
 
 function hideKey(text, key) {
   let t = String(text || '');
@@ -143,29 +142,35 @@ function askRumble(cfg) {
   return liveInflight;
 }
 
-// Who really wrote this command? Returns 'admin', 'subscriber' or '' (not allowed / could not be checked).
-async function rumbleGroupOf(cfg, text) {
-  if (!cfg.rumbleKey) return '';
-  const seenAt = Date.now();
-  for (let i = 0; i < MATCH_TRIES; i++) {
-    const answer = await askRumble(cfg);
-    await chrome.storage.session.set({ rumbleCheck: { at: Date.now(), ok: !!answer.data, error: answer.error || '' } });
-    if (answer.data) {
-      const m = S.matchRumbleMessage(answer.data, text, Date.now() - seenAt);
-      if (m.status === 'ambiguous') return '';
-      if (m.status === 'ok') return S.rumbleGroup(S.parseRumbleAnswer(answer.data), m.user);
-    }
-    if (i < MATCH_TRIES - 1) await new Promise((r) => setTimeout(r, MATCH_WAIT_MS));
-  }
-  return '';
+// The subscriber list and the admin name, from Rumble or from the last answer (30 s). Returns { parsed } or { error }.
+async function rumbleLists(cfg) {
+  const now = Date.now();
+  if (rumbleCache.parsed && rumbleCache.key === cfg.rumbleKey && now - rumbleCache.at < RUMBLE_CACHE_MS) return { parsed: rumbleCache.parsed };
+  const answer = await askRumble(cfg);
+  await chrome.storage.session.set({ rumbleCheck: { at: Date.now(), ok: !!answer.data, error: answer.error || '' } });
+  if (!answer.data) return { error: answer.error || 'Rumble gave no usable answer.' };
+  const parsed = S.parseRumbleAnswer(answer.data);
+  if (!parsed.ok) return { error: parsed.error };
+  rumbleCache = { at: Date.now(), key: cfg.rumbleKey, parsed };
+  return { parsed };
 }
 
-// May this command be used by this chatter? Voices for everyone: yes. Voices for subscribers: only on Rumble and
-// only when the API shows a subscriber or the admin. On other platforms there is no check yet, so they are refused.
+// Why a command was not read: shown in the popup (the red line). One short sentence.
+async function refuse(why) {
+  await saveStats({ lastError: 'Not read: ' + why });
+}
+
+// May this command be used by this chatter? Voices for everyone: yes. Voices for subscribers: only on Rumble,
+// with the key, and only when the chat name is the admin or in the subscriber list. Says why when not.
 async function mayUse(cfg, mapping, msg) {
   if (!S.needsSubscriber(mapping)) return true;
-  if (msg.platform !== 'rumble') return false;
-  return !!(await rumbleGroupOf(cfg, msg.text));
+  const cmd = '!' + S.normalizeCommand(mapping.command);
+  if (msg.platform !== 'rumble') { await refuse(cmd + ' is for subscribers only, and that is checked on Rumble only.'); return false; }
+  if (!cfg.rumbleKey) { await refuse(cmd + ' is for subscribers only: add your Rumble key in Settings.'); return false; }
+  const r = await rumbleLists(cfg);
+  if (r.error) { await refuse(cmd + ': ' + r.error); return false; }
+  if (!S.rumbleGroup(r.parsed, msg.user)) { await refuse((msg.user || 'This chatter') + ' is not a subscriber (' + cmd + ' is for subscribers only).'); return false; }
+  return true;
 }
 
 // The same message must not be sent twice (for example while an old and a new copy of the chat
@@ -178,6 +183,37 @@ function isDuplicate(msg) {
   if (recentChat.has(key)) return true;
   recentChat.set(key, now);
   return false;
+}
+
+// ---- soundbites ---------------------------------------------------------------------------------
+// The relay (SimpleVoice OBS) keeps the sound clips. The extension only asks which emote names have one,
+// so that the chat page forwards a message that is nothing but such emotes. The names are kept in
+// storage for the chat pages (they read them there). VoiceStudio's relay has no such list: then it is empty.
+let sbCheckedAt = 0;
+async function refreshSoundbites(force) {
+  const now = Date.now();
+  if (!force && now - sbCheckedAt < 60000) return;
+  sbCheckedAt = now;
+  const cfg = await getConfig();
+  let names = [];
+  if (cfg.enabled && S.isSimpleVoice(cfg)) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const res = await fetch(S.trimUrl(cfg.relayUrl) + '/v1/soundbites', { cache: 'no-store', signal: ctrl.signal });
+      if (res.ok) {
+        const data = await res.json();
+        names = (data.soundbites || []).map((e) => String(e.name || '')).filter(Boolean).slice(0, 400);
+      }
+    } catch (e) { /* relay not reachable: no soundbites for now */ } finally { clearTimeout(timer); }
+  }
+  await chrome.storage.local.set({ soundbites: { names, at: now } });
+}
+
+async function soundbiteNames() {
+  await refreshSoundbites(false);
+  const { soundbites } = await chrome.storage.local.get('soundbites');
+  return (soundbites && soundbites.names) || [];
 }
 
 async function handleChat(msg) {
@@ -193,6 +229,18 @@ async function handleChat(msg) {
     if (!(await relayReady(cfg))) return;
     if (!(await cooldownOk(who, cfg.cooldownSec))) return;
     await postToRelay(cfg, S.buildPayload(cfg, result, { user: msg.user, platform: msg.platform }));
+    return;
+  }
+
+  // ---- a message that is only soundbite emotes (also when "Read all chat" is off) ----
+  const sbNames = await soundbiteNames();
+  if (sbNames.length && S.soundbiteOnly(msg.text, sbNames)) {
+    if (!(await relayReady(cfg))) return;
+    if (!(await cooldownOk('sb:' + who, cfg.cooldownSec))) return;
+    // The relay says nothing for a clip, but the request carries a voice like every other one.
+    const first = (cfg.mappings || []).find((m) => m.voice);
+    const voice = cfg.allVoice || (first && first.voice) || 'default';
+    await postToRelay(cfg, S.buildChatPayload(cfg, S.cleanText(msg.text), voice, { user: msg.user, platform: msg.platform }, false));
     return;
   }
 
@@ -234,12 +282,13 @@ async function handleTest() {
 }
 
 // Which chat tabs are open and being listened to (shown in the popup).
-async function recordChatStatus(tabId, msg) {
+async function recordChatStatus(tabId, frameId, msg) {
   const { chatTabs } = await chrome.storage.session.get('chatTabs');
   const map = chatTabs || {};
   const now = Date.now();
   Object.keys(map).forEach((k) => { if (now - map[k].at > 60000) delete map[k]; });
-  map[tabId] = {
+  map[tabId + ':' + frameId] = {
+    tab: tabId,
     platform: String(msg.platform || ''),
     listening: !!msg.listening,
     seen: Number(msg.seen) || 0,
@@ -290,7 +339,8 @@ let chatQueue = Promise.resolve();
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || sender.id !== chrome.runtime.id) return false;
   if (msg.type === 'chatstatus') {
-    if (sender.tab) recordChatStatus(sender.tab.id, msg).catch(() => {});
+    if (sender.tab) recordChatStatus(sender.tab.id, sender.frameId || 0, msg).catch(() => {});
+    refreshSoundbites(false).catch(() => {});
     return false;
   }
   if (msg.type === 'chat') {

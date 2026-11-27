@@ -119,7 +119,7 @@
     <p class="note" style="margin-top:0">Each voice can be for <b>everyone</b> or <b>only subscribers (and the admin)</b>. The subscriber check works on <b>Rumble only</b> for now and needs your own Rumble Live Stream API key. Without a key the choice is grayed out. A voice set to subscribers is not read on other platforms (there is no check for them yet), and not when the check cannot be made.</p>
     <label for="rumbleKey">Rumble Live Stream API key (or the whole API address)</label>
     <div class="row-line"><input type="password" id="rumbleKey" autocomplete="off" spellcheck="false"><button id="testKey">Save and test key</button></div>
-    <p class="note">You find it on Rumble in your channel's live stream settings. It stays in this browser: it is not exported, not sent to the relay, and only sent to rumble.com. The name shown in the chat is never trusted (anyone can use the same display name): each command is matched to Rumble's own message list, and the real account behind it must be a subscriber or the channel's own account (the admin).</p>
+    <p class="note">You find it on Rumble in your channel's live stream settings. It stays in this browser: it is not exported, not sent to the relay, and only sent to rumble.com. The name shown in the chat must be the channel's own account (the admin) or be in the subscriber list that Rumble gives (checked again every 30 seconds). If a command is not read, the popup says why.</p>
     <div class="status" id="keyStatus"></div>
   </section>
 

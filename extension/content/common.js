@@ -52,6 +52,24 @@
           if (area === 'local' && ch.config) { var c = ch.config.newValue; forwardAll = !!(c && c.readAll && c.enabled !== false); }
         });
       } catch (e) { /* extension reloaded */ }
+      // Names of the emotes that have a sound clip (kept in storage by the extension). A message that
+      // holds one of them also leaves the page, even when it is not a command and "Read all chat" is off.
+      var emoteNames = {};
+      function setEmotes(v) {
+        emoteNames = {};
+        ((v && v.names) || []).forEach(function (n) { emoteNames[String(n).toLowerCase()] = true; });
+      }
+      try {
+        chrome.storage.local.get('soundbites', function (r) { setEmotes(r && r.soundbites); });
+        chrome.storage.onChanged.addListener(function (ch, area) {
+          if (area === 'local' && ch.soundbites) setEmotes(ch.soundbites.newValue);
+        });
+      } catch (e) { /* extension reloaded */ }
+      function hasEmote(text) {
+        var re = /:([A-Za-z0-9_-]{1,40}):/g, m;
+        while ((m = re.exec(text))) { if (emoteNames[m[1].toLowerCase()]) return true; }
+        return false;
+      }
       var seenCount = 0;   // live chat messages noticed (any message, not only commands)
       var lastCommand = '';
 
@@ -84,7 +102,7 @@
           seenCount++;
           var text = String(info.text).replace(/[​-‍﻿]/g, '').trim();
           var isBang = text.charAt(0) === '!';
-          if (!isBang && !forwardAll) return;
+          if (!isBang && !forwardAll && !hasEmote(text)) return;
           var firstOfKind = false;
           if (isBang) {
             firstOfKind = lastCommand !== text.slice(0, 40);
@@ -166,6 +184,8 @@
       }, POLL_MS));
 
       timers.push(setInterval(function () { if (!dead) report(); }, HEARTBEAT_MS));
+      // for the platform scripts: is this emote name one that has a sound clip?
+      opts.isEmote = function (name) { return !!emoteNames[String(name || '').replace(/:/g, '').toLowerCase()]; };
       report();
     }
   };

@@ -551,6 +551,16 @@
     return { ok: false, reason: 'old', version: version };
   }
 
+  // The short version for the popup: one sentence. The long one stays in the settings.
+  function relayGateShort(gate) {
+    if (!gate || gate.ok) return '';
+    var sv = gate.engine === 'simplevoice';
+    var tag = sv ? 'Relay (SV)' : 'Relay (VS)';
+    if (gate.reason === 'other') return 'Wrong program at this address. Check Settings, section 2.';
+    if (gate.reason === 'old') return tag + ' is too old or is another program. Update it.';
+    return tag + ' is not running. ' + (sv ? 'Start SimpleVoice OBS.' : 'Start the relay.');
+  }
+
   function relayGateMessage(gate) {
     if (!gate || gate.ok) return '';
     var where = gate.url ? ' at ' + gate.url : '';
@@ -634,16 +644,11 @@
     return { engine: cur, change: false, note: 'none' };
   }
 
-  // ---- Rumble: who really wrote a command (for "only subscribers" voices) -------------------------
-  // The name shown in the chat page is never trusted: anyone can open a channel with the same display
-  // name. Instead the command is matched to a message in the Rumble Live Stream API's own chat list
-  // (same text, written just now); the API gives the real account name, which is compared with the
-  // API's list of subscribers and with the channel's own account (the admin). Needs the user's own API
-  // key. If the message is not found, or two accounts wrote the same text at the same moment, the
-  // command is refused.
+  // ---- Rumble: "only subscribers" voices ---------------------------------------------------------
+  // The name shown in the chat is compared with the channel's own account name (the admin) and with the
+  // list of subscribers from the Rumble Live Stream API. Needs the user's own API key.
   var RUMBLE_API = 'https://rumble.com/-livestream-api/get-data';
   var MAX_SUBSCRIBERS = 20000;
-  var MATCH_WINDOW_MS = 8000;
 
   function nameKey(user) { return String(user || '').trim().replace(/^@/, '').toLowerCase(); }
 
@@ -677,32 +682,6 @@
       if (k && !seen[k] && names.length < MAX_SUBSCRIBERS) { seen[k] = true; names.push(k); }
     });
     return { ok: true, names: names, admin: nameKey(data.username), listed: names.length, total: Math.max(total, names.length), error: '' };
-  }
-
-  function squash(t) { return String(t || '').replace(/\s+/g, ' ').trim(); }
-
-  // data: answer of the API. text: the command as read from the page. waitedMs: how long ago the page showed it.
-  // Returns { status: 'ok', user } | { status: 'none' } | { status: 'ambiguous' }.
-  function matchRumbleMessage(data, text, waitedMs) {
-    var live = data && Array.isArray(data.livestreams) ? data.livestreams[0] : null;
-    var msgs = live && live.chat && Array.isArray(live.chat.recent_messages) ? live.chat.recent_messages : null;
-    var want = squash(text);
-    if (!msgs || !want) return { status: 'none' };
-    var now = Date.parse(data.now);
-    if (isNaN(now)) now = Date.now();
-    var users = {}, n = 0;
-    msgs.forEach(function (m) {
-      if (!m || typeof m !== 'object' || squash(m.text) !== want) return;
-      var made = Date.parse(m.created_on);
-      var k = nameKey(m.username);
-      if (isNaN(made) || !k) return;
-      var age = now - made;
-      if (age < -5000 || age > (Number(waitedMs) || 0) + MATCH_WINDOW_MS) return;
-      if (!users[k]) { users[k] = true; n++; }
-    });
-    if (n === 0) return { status: 'none' };
-    if (n > 1) return { status: 'ambiguous' };
-    return { status: 'ok', user: Object.keys(users)[0] };
   }
 
   // Which group is this account in? 'admin' (the channel's own account), 'subscriber' or ''.
@@ -811,13 +790,38 @@
   }
 
 
+  // ---- soundbites: :name: in a message (Rumble writes its emotes this way) -----------------------
+  var EMOTE_RE = /:([A-Za-z0-9_-]{1,40}):/g;
+  // True when the message holds nothing but known soundbite emotes (and spaces). Such a message is
+  // sent to the relay even when "Read all chat" is off; the relay plays the clips and says nothing.
+  function soundbiteOnly(text, names) {
+    var known = {};
+    (names || []).forEach(function (n) { known[String(n).toLowerCase()] = true; });
+    var found = 0;
+    var rest = cleanText(text).replace(EMOTE_RE, function (all, name) {
+      if (known[name.toLowerCase()]) { found++; return ' '; }
+      return all;
+    });
+    return found > 0 && rest.trim() === '';
+  }
+  // True when the message holds at least one known soundbite emote (the chat page forwards it).
+  function hasSoundbite(text, names) {
+    var known = {};
+    (names || []).forEach(function (n) { known[String(n).toLowerCase()] = true; });
+    var m;
+    EMOTE_RE.lastIndex = 0;
+    while ((m = EMOTE_RE.exec(String(text || '')))) { if (known[m[1].toLowerCase()]) return true; }
+    return false;
+  }
+
   var api = {
+    soundbiteOnly: soundbiteOnly,
+    hasSoundbite: hasSoundbite,
     realVoices: realVoices,
     RUMBLE_API: RUMBLE_API,
     nameKey: nameKey,
     cleanRumbleKey: cleanRumbleKey,
     parseRumbleAnswer: parseRumbleAnswer,
-    matchRumbleMessage: matchRumbleMessage,
     rumbleGroup: rumbleGroup,
     needsSubscriber: needsSubscriber,
     COMMON_NETS: COMMON_NETS,
@@ -854,6 +858,7 @@
     buildChatPayload: buildChatPayload,
     checkRelayInfo: checkRelayInfo,
     relayGateMessage: relayGateMessage,
+    relayGateShort: relayGateShort,
     sanitizeConfig: sanitizeConfig,
     buildExport: buildExport,
     parseImport: parseImport,

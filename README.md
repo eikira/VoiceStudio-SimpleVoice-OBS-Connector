@@ -4,7 +4,7 @@
 
 A Chrome and Firefox extension that **reads stream chat commands aloud with your own voices**, through OBS. The speech is made either by **[VoiceStudio](https://voicestudio.sh)** or by **[SimpleVoice OBS](https://github.com/eikira/SimpleVoice-OBS)**: you choose in Settings, and **Detect** can find out which one is running.
 
-> **Version 0.3.0** adds voices for subscribers only (Rumble) and Detect relay. **Version 0.2.0** added SimpleVoice OBS and the engine choice. Before 0.2.0 the extension was called "VoiceStudio OBS Connector". **Coming from 0.1.1?** See [Moving from 0.1.1](#moving-from-011) (one-time step).
+> **Version 0.3.1** adds **soundbites** (a sound clip for an emote, with SimpleVoice OBS 1.0.4 or newer), a simpler subscriber check on Rumble, and a clearer popup. **Version 0.3.0** added voices for subscribers only (Rumble) and Detect relay. **Version 0.2.0** added SimpleVoice OBS and the engine choice. Before 0.2.0 the extension was called "VoiceStudio OBS Connector". **Coming from 0.1.1?** See [Moving from 0.1.1](#moving-from-011) (one-time step).
 
     chat:  !voice hello everyone            ->  the voice linked to !voice says "hello everyone"
     chat:  !voice2 welcome to the stream    ->  a different voice linked to !voice2 says it
@@ -126,9 +126,20 @@ more commands from that viewer are ignored for N seconds).
 
 With VoiceStudio the extension only knows the **relay's address**. The relay passes the voice list, the model list and the speech on to VoiceStudio, and the OBS page gets its audio from the relay too. Where the relay finds VoiceStudio is set on the relay (default `http://127.0.0.1:3900`, right when VoiceStudio runs on the relay's computer): tray menu *VoiceStudio address...* on Windows, or the relay's network page. Needs relay 0.1.1 or newer.
 
+## Soundbites (SimpleVoice OBS 1.0.4 or newer)
+
+A soundbite is a short sound clip that plays when a chat message contains an emote written like `:choppa:` (this is how Rumble writes its emotes). You add the clips in the SimpleVoice OBS control panel, section **Soundbites**: type the name without colons, choose a sound file (up to 15 seconds), pick a volume. Then:
+
+    chat:  :choppa:                          ->  the clip plays (also with "Read all chat" off)
+    chat:  !voice hello :choppa: friend      ->  "hello", the clip, "friend", in this order, as one piece
+
+The relay makes the whole message first and plays it in one go, so the order is always the written one. The extension asks SimpleVoice OBS for the clip names about once a minute. With VoiceStudio there are no soundbites.
+
+**Rumble:** Rumble shows an emote as a picture with no name in it; the name is only on the page's emote buttons. The extension learns picture -> name from the buttons it sees (the popout chat shows the stream's top 3 emotes; the full emote list may add more). The popup shows how many clips and Rumble emotes are known. Twitch, Kick and YouTube emotes are not handled yet.
+
 ## Voices for subscribers only (Rumble)
 
-In Settings -> 3 each voice has **Who may use it**: *Everyone* or *Only subscribers (+ admin)*. The second choice needs your own **Rumble Live Stream API key** (paste it under the list and click *Save and test key*); without a key it is grayed out. It works on **Rumble only** for now: on other platforms a subscribers-only voice is not read. The display name in the chat is never trusted, because anyone can use the same name. Each command is matched to Rumble's own message list and the real account behind it must be a subscriber or the channel's own account (the admin). If that cannot be checked, the command is not read. Your key stays in this browser and is never exported.
+In Settings -> 3 each voice has **Who may use it**: *Everyone* or *Only subscribers (+ admin)*. The second choice needs your own **Rumble Live Stream API key** (paste it under the list and click *Save and test key*); without a key it is grayed out. It works on **Rumble only** for now: on other platforms a subscribers-only voice is not read. The name shown in the chat must be the channel's own account (the admin) or be in the subscriber list that Rumble gives (checked again every 30 seconds, names without upper/lower case). Rumble calls the list "recent subscribers", so a very old subscriber may be missing from it. If a command is not read, the popup says why. Your key stays in this browser and is never exported.
 
 ## Relay on another computer: Detect
 

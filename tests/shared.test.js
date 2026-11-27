@@ -514,21 +514,6 @@ test('subscribers: the key is cleaned, never exported, and an import keeps the b
   assert.strictEqual(S.parseImport(JSON.stringify(sneaky), 'x', 'ownKey12345').config.rumbleKey, 'ownKey12345');
 });
 
-test('subscribers: the real account is found from the API, not from the shown name', () => {
-  const d = rumbleData();
-  assert.deepStrictEqual(S.matchRumbleMessage(d, '!hazed hello', 0), { status: 'ok', user: 'subone' });
-  assert.deepStrictEqual(S.matchRumbleMessage(d, '!hazed   hello', 0), { status: 'ok', user: 'subone' }, 'spaces do not matter');
-  assert.strictEqual(S.matchRumbleMessage(d, '!hazed other', 0).status, 'none');
-  // two accounts wrote the same text at the same moment: refused
-  const two = rumbleData({ livestreams: [{ chat: { recent_messages: [
-    { text: '!x hi', username: 'A', created_on: '2026-11-15T12:00:08Z' }, { text: '!x hi', username: 'B', created_on: '2026-11-15T12:00:09Z' }] } }] });
-  assert.strictEqual(S.matchRumbleMessage(two, '!x hi', 0).status, 'ambiguous');
-  // an old message with the same text is not it
-  const old = rumbleData({ livestreams: [{ chat: { recent_messages: [{ text: '!x hi', username: 'A', created_on: '2026-11-15T11:50:00Z' }] } }] });
-  assert.strictEqual(S.matchRumbleMessage(old, '!x hi', 0).status, 'none');
-  assert.strictEqual(S.matchRumbleMessage({}, '!x hi', 0).status, 'none');
-});
-
 test('subscribers: groups: admin, subscriber, nobody', () => {
   const p = S.parseRumbleAnswer(rumbleData());
   assert.strictEqual(p.ok, true);
@@ -649,4 +634,23 @@ test('relay gate: with VoiceStudio selected the relay must be one that passes Vo
   assert.match(S.relayGateMessage(Object.assign({ engine: 'voicestudio' }, g)), /too old.*0\.1\.1/);
   assert.strictEqual(S.checkRelayInfo(Object.assign({}, oldRelay, { version: '0.1.1', voicestudio: 'http://127.0.0.1:3900' }), 'voicestudio').ok, true);
   assert.strictEqual(S.checkRelayInfo(oldRelay, 'simplevoice').reason, 'other', 'SimpleVoice OBS selected: the other message');
+});
+
+test('soundbites: a message of only known emotes is a soundbite message', () => {
+  const names = ['choppa', 'Boom'];
+  assert.strictEqual(S.soundbiteOnly(':choppa:', names), true);
+  assert.strictEqual(S.soundbiteOnly('  :CHOPPA:   :boom: ', names), true);
+  assert.strictEqual(S.soundbiteOnly(':choppa: hello', names), false);
+  assert.strictEqual(S.soundbiteOnly(':unknown:', names), false);
+  assert.strictEqual(S.soundbiteOnly(':choppa: :unknown:', names), false);
+  assert.strictEqual(S.soundbiteOnly('', names), false);
+  assert.strictEqual(S.soundbiteOnly(':choppa:', []), false);
+  assert.strictEqual(S.soundbiteOnly('12:30:45', names), false);
+});
+
+test('soundbites: hasSoundbite finds a known emote inside a longer message', () => {
+  assert.strictEqual(S.hasSoundbite('hello :choppa: friend', ['choppa']), true);
+  assert.strictEqual(S.hasSoundbite('hello :other: friend', ['choppa']), false);
+  assert.strictEqual(S.hasSoundbite('hello', ['choppa']), false);
+  assert.strictEqual(S.hasSoundbite(':a: :choppa:', ['choppa']), true);
 });

@@ -2,6 +2,18 @@
 
 Short overview of what changed. Versions before 0.0.5 were private test versions.
 
+## 0.3.1
+
+Works with VoiceStudio relay 0.1.1 or newer (VoiceStudio), or SimpleVoice OBS 1.0.0 or newer. **Soundbites need SimpleVoice OBS 1.0.4.**
+
+- **Soundbites (SimpleVoice OBS 1.0.4 or newer only):** play a sound clip for an emote. Add the clips in the SimpleVoice OBS control panel (section "Soundbites"), for example `choppa` for `:choppa:`. A chat message that is only such emotes plays the clips, also when "Read all chat" is off. In a command or a read-all line the clips are played in the place where the emote stands: `!voice hello :choppa: friend` speaks "hello", plays the clip, speaks "friend". The extension asks the relay for the list of clip names about once a minute (`/v1/soundbites`); with the VoiceStudio relay there is no list and nothing changes.
+- **Rumble emotes:** Rumble shows a chat emote as a picture without a name in it. The name is only on the page's emote buttons (`data-js-emote=":bbc:"`). The extension learns picture -> name from every such button it sees and keeps that list; a picture in a message is turned into `:bbc:` when that name has a clip. An emote is known after its button was seen once (the stream's popout chat shows the top 3; the full emote list may add more). Other platforms are unchanged.
+- **Voices for subscribers only (Rumble), simpler:** the name shown in the chat must be the channel's own account (the admin) or be in the subscriber list from the Rumble Live Stream API (names compared without upper/lower case; the answer is kept for 30 seconds). The 0.3.0 matching of each command to a message in Rumble's chat list is removed. It never worked reliably: Rumble cuts stored chat text at 200 characters, and no cause was found for the silent failures.
+- **The popup says why a command was not read** (red line): not a subscriber, key missing, Rumble not answering, not on Rumble.
+- **Popup:** the first line now reads `Relay (SV)` (SimpleVoice OBS) or `Relay (VS)` (VoiceStudio relay) with `running` or `not running`. The red box for a missing or old relay is now one short sentence with the download link; the long text stays in Settings. The popup also shows `Soundbites: N clips, M Rumble emotes known`.
+- **Probably fixed: "chat list not found"** in the popup on Rumble (seen once; cause deduced from the code, not reproduced): the chat can be a page inside the stream page, and the outer page, which has no chat list, overwrote the status of the chat page. A page without a chat list no longer hides the one that has it.
+- **Not verified:** the whole thing on a real Rumble stream with a real subscriber account (the subscriber check was tried against a mock Rumble answer only; whether someone can use the same display name as a subscriber on Rumble was never checked; Rumble's list is called "recent subscribers", so very old subscribers may be missing from it); soundbites with real voices in OBS; the full Rumble emote list; Twitch, Kick and YouTube emotes.
+
 ## 0.3.0
 
 Needs VoiceStudio relay 0.1.1 or newer (for VoiceStudio) or SimpleVoice OBS 1.0.0 or newer. The newest relay and Setup versions (relay 0.1.1, SimpleVoice OBS 1.0.3) add the listening address and are needed for the new display and Detect names.
